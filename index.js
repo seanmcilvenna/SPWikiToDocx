@@ -30,37 +30,42 @@ var argv = require('yargs')
     })
     .option('output', {
         alias: 'o',
-        describe: 'The file to save the output to',
+        describe: 'The file to save the DOCX output to',
         default: 'output.docx'
     })
-    .option('images', {
-        alias: 'i',
-        describe: 'The library that all images are stored in for the content in the library'
+    .option('combinedHtml', {
+        alias: 'c',
+        describe: 'The file to save the combined HTML output to'
     })
     .argv;
 
 var client = new SP.RestService(argv.site);
 var library = client.list(argv.library);
-var images;
 
-if (argv.images) {
-    images = client.list(argv.images);
-}
-
-function getImage(list, imageUrl) {
+function getImage(imageUrl, fromSharepoint) {
     var deferred = Q.defer();
 
+    var requestUrl = imageUrl;
+
+    if (requestUrl.indexOf('http://') < 0 && requestUrl.indexOf('https://') < 0) {
+        requestUrl = library.service.protocol + '//' + library.service.host + requestUrl;
+    }
+
     var options = {
-        url: imageUrl,
-        headers: {
-            'Cookie': 'FedAuth=' + list.service.FedAuth + '; rtFa=' + list.service.rtFa,
-        },
+        url: requestUrl,
+        headers: {},
         encoding: null
     };
+
+    if (fromSharepoint) {
+        options.headers['Cookie'] = 'FedAuth=' + library.service.FedAuth + '; rtFa=' + library.service.rtFa;
+    }
 
     request(options, function(error, response, body) {
         if (error) {
             deferred.reject(error);
+        } else if (response.statusCode != 200) {
+            deferred.reject(body.toString('utf8'));
         } else {
             var imageUrlInfo = url.parse(imageUrl);
             deferred.resolve({
@@ -106,19 +111,42 @@ function getLibraryItems(list) {
     return deferred.promise;
 };
 
-function replaceImages(allHtmlContent, allImages) {
-    if (!allImages) {
-        return Q.resolve(allHtmlContent);
+function replaceImage(imgTag) {
+    var deferred = Q.defer();
+    var imgSrc = imgTag['$']['src'];
+    var getImgPromise;
+
+    if (imgSrc.indexOf(library.service.path) == 0) {
+        getImgPromise = getImage(imgSrc, true);
+    } else {
+        getImgPromise = getImage(imgSrc, false);
     }
 
+    getImgPromise
+        .then(function(imgData) {
+            imgTag['$']['src'] = 'data:' + imgData.type + ';base64,' + imgData.content;
+        })
+        .catch(function() {
+            console.log('Could not retrieve image: ' + imgSrc);
+        })
+        .done(function() {
+            deferred.resolve();
+        });
+
+    return deferred.promise;
+};
+
+function replaceImages(allHtmlContent) {
     var deferred = Q.defer();
     var parser = new xml2js.Parser();
     var builder = new xml2js.Builder();
 
-    var fixImageTags = function(current) {
+    var findImageTags = function(current) {
+        var imgTags = [];
+
         if (current instanceof Array) {
             for (var i in current) {
-                fixImageTags(current[i]);
+                imgTags = imgTags.concat(findImageTags(current[i]));
             }
         } else if (typeof current == 'object') {
             for (var i in current) {
@@ -134,26 +162,38 @@ function replaceImages(allHtmlContent, allImages) {
                             continue;
                         }
 
-                        for (var x in allImages) {
-                            if (allImages[x].path == img['$']['src']) {
-                                img['$']['src'] = 'data:' + allImages[x].type + ';base64,' + allImages[x].content;
-                            }
-                        }
+                        imgTags.push(img);
                     }
                 } else {
-                    fixImageTags(current[i]);
+                    imgTags = imgTags.concat(findImageTags(current[i]));
                 }
             }
         }
-    }
+
+        return imgTags;
+    };
 
     parser.parseString(allHtmlContent, function(err, result) {
         if (err) {
             deferred.reject(err);
         } else {
-            fixImageTags(result);
-            var xml = builder.buildObject(result);
-            deferred.resolve(xml);
+            var imgTags = findImageTags(result);
+            var replaceImagePromises = [];
+
+            for (var i in imgTags) {
+                var imgTag = imgTags[i];
+                var replaceImagePromise = replaceImage(imgTag);
+                replaceImagePromises.push(replaceImagePromise);
+            }
+
+            Q.all(replaceImagePromises)
+                .then(function() {
+                    var xml = builder.buildObject(result);
+                    deferred.resolve(xml);
+                })
+                .catch(function(err) {
+                    deferred.reject(err);
+                });
         }
     });
 
@@ -169,34 +209,13 @@ function doWork() {
             return;
         }
 
-        var allImages = {};
-
         /*
         client.metadata(function(err, data) {
             console.log('test');
         });
         */
 
-        getLibraryItems(images)
-            .then(function(data) {
-                if (data) {
-                    var imagePromises = [];
-
-                    for (var i in data.results) {
-                        if (data.results[i].ContentType == 'Image') {
-                            imagePromises.push(
-                                getImage(images, data.results[i].__metadata.media_src)
-                            );
-                        }
-                    }
-
-                    return Q.all(imagePromises);
-                }
-            })
-            .then(function(imageDatas) {
-                allImages = imageDatas;
-                return getLibraryItems(library);
-            })
+        getLibraryItems(library)
             .then(function(libraryData) {
                 var itemPromises = [];
 
@@ -225,11 +244,15 @@ function doWork() {
 
                 allHtmlContent = allHtmlContent.replace(/<br>/g, '<br/>');
 
-                return replaceImages(allHtmlContent, allImages);
+                return replaceImages(allHtmlContent);
             })
             .then(function(results) {
                 var docx = HtmlDocx.asBlob(results);
-                //fs.writeFile('test.html', results);
+
+                if (argv.combinedHtml) {
+                    fs.writeFile(argv.combinedHtml, results);
+                }
+
                 fs.writeFile(argv.output, docx, function(err) {
                     if (err) throw err;
                     console.log('Done');
