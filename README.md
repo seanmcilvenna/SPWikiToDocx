@@ -1,5 +1,7 @@
 # SPWikiToDocx
-Convert a sharepoint wiki library into a DOCX file
+Convert a sharepoint wiki library into a DOCX file.
+The tool reads each Wiki page in a given SP library and combines all of the contents of the Wiki pages into a single HTML chunk. html-docx-js is used to convert that one large HTML chunk into a DOCX file.
+The tool attempts to retrieve each of the images referenced by the Wiki pages and embeds the images as base64 data in the HTML files ("data:image/png;base64,XXXXX") so that the images are visible in the output.
 
 # Dependencies
 * html-docx-js
@@ -13,13 +15,6 @@ Convert a sharepoint wiki library into a DOCX file
 # Installation
 ```
 npm install sp-wiki-to-docx -g
-```
-
-After installing, because of an issue with the "sharepoint" dependency, you have to CD to the directory that the sharepoint module is installed and forcefully install xml2js@0.1.14
-
-```
-cd "\Program Files\nodejs\node_modules\sp-wiki-to-docx\node_modules\sharepoint"
-npm install xml2js@0.1.14
 ```
 
 # Usage

@@ -1,6 +1,6 @@
 {
   "name": "sp-wiki-to-docx",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Convert a sharepoint wiki library into a DOCX file",
   "main": "index.js",
   "scripts": {
