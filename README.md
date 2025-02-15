@@ -32,3 +32,11 @@ sp-wiki-to-docx -s SITE_URL -l LIBRARY_NAME -u USERNAME -o output.docx
 | --password | -p | Sharepoint online password | No, will prompt if not specified on command line |
 | --output | -o | The file to save the output to (default: "output.docx") | No |
 | --combinedHtml | -c | The file to save the combined HTML output to\nex: output.html | No |
+
+## ☕ Support My Work
+
+Find this useful and want to show appreciation??  
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support%20My%20Work-orange?style=flat&logo=buy-me-a-coffee)](https://buymeacoffee.com/seanmcilvenna)
+
+Your support helps keep this project alive and motivates me to continue improving it! 🚀
